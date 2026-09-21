@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mano rutina</title>
+  <style>
+    :root {
+      --bg: #16171d;
+      --panel: #1f2028;
+      --text: #f3f3f5;
+      --muted: #a3a5b0;
+      --line: #33353f;
+      --accent: #8b9bff;
+      --done: #5fd08a;
+      --danger: #ff7b7b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.4;
+    }
+
+    main {
+      max-width: 560px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 20px;
+      text-align: center;
+      font-size: 2.4rem;
+    }
+
+    h2 {
+      margin: 28px 0 12px;
+      font-size: 1.2rem;
+    }
+
+    .add-form {
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font-size: 1rem;
+    }
+
+    input[type="text"]:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    button {
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--accent); }
+
+    .primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #10121a;
+      font-weight: 600;
+    }
+
+    .danger:hover { border-color: var(--danger); color: var(--danger); }
+
+    .message {
+      min-height: 1.4em;
+      margin: 8px 0 0;
+      color: var(--danger);
+      font-size: 0.9rem;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+
+    li.is-done {
+      border-left-color: var(--done);
+    }
+
+    .title {
+      flex: 1;
+      min-width: 140px;
+      overflow-wrap: anywhere;
+    }
+
+    li.is-done .title {
+      color: var(--done);
+      text-decoration: line-through;
+    }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    li.is-done .done-btn {
+      border-color: var(--done);
+      color: var(--done);
+    }
+
+    .row-error {
+      flex-basis: 100%;
+      margin: 0;
+      color: var(--danger);
+      font-size: 0.85rem;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Mano rutina</h1>
+
+    <div class="add-form">
+      <input type="text" id="new-title" placeholder="Įrašyk užduotį..." aria-label="Naujo veiksmo pavadinimas" autocomplete="off">
+      <button type="button" id="add-btn" class="primary">Pridėti</button>
+    </div>
+    <p class="message" id="message" role="alert"></p>
+
+    <h2>Mano užduotys</h2>
+    <ul id="list"></ul>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'mano-rutina-uzduotys';
+
+    let tasks = loadTasks();   // [{ id, title, done }]
+    let editingId = null;      // kurio veiksmo pavadinimas dabar keičiamas
+
+    const list = document.getElementById('list');
+    const newTitle = document.getElementById('new-title');
+    const message = document.getElementById('message');
+
+    // ---------- Saugojimas (išlieka perkrovus puslapį) ----------
+    function loadTasks() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const data = raw ? JSON.parse(raw) : [];
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveTasks() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      } catch (e) {
+        // jei naršyklė neleidžia saugoti, programa vis tiek veikia
+      }
+    }
+
+    // ---------- Veiksmai ----------
+    function addTask() {
+      const title = newTitle.value.trim();
+      if (title === '') {
+        message.textContent = 'Įrašyk veiksmo pavadinimą.';
+        return;
+      }
+      tasks.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        title: title,
+        done: false
+      });
+      newTitle.value = '';
+      message.textContent = '';
+      saveTasks();
+      render();
+      newTitle.focus();
+    }
+
+    function markDone(id) {
+      const task = tasks.find(t => t.id === id);
+      if (task) {
+        task.done = true; // visada true, todėl pakartotinis spaudimas nieko nekeičia
+        saveTasks();
+        render();
+      }
+    }
+
+    function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      if (editingId === id) editingId = null;
+      saveTasks();
+      render();
+    }
+
+    function startEdit(id) {
+      editingId = id;
+      render();
+    }
+
+    function cancelEdit() {
+      editingId = null;
+      render();
+    }
+
+    function saveEdit(id, value, errorEl) {
+      const title = value.trim();
+      if (title === '') {
+        errorEl.textContent = 'Pavadinimas negali būti tuščias.';
+        return;
+      }
+      const task = tasks.find(t => t.id === id);
+      if (task) task.title = title;
+      editingId = null;
+      saveTasks();
+      render();
+    }
+
+    // ---------- Piešimas ----------
+    function makeButton(text, className, onClick) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = text;
+      if (className) btn.className = className;
+      btn.addEventListener('click', onClick);
+      return btn;
+    }
+
+    function render() {
+      list.innerHTML = '';
+
+      if (tasks.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'Sąrašas tuščias. Pridėk pirmą veiksmą.';
+        list.appendChild(empty);
+        return;
+      }
+
+      let inputToFocus = null;
+
+      tasks.forEach(task => {
+        const li = document.createElement('li');
+        if (task.done) li.classList.add('is-done');
+
+        if (task.id === editingId) {
+          // Pavadinimo keitimo režimas
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = task.title;
+          input.setAttribute('aria-label', 'Naujas veiksmo pavadinimas');
+
+          const error = document.createElement('p');
+          error.className = 'row-error';
+          error.setAttribute('role', 'alert');
+
+          input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') saveEdit(task.id, input.value, error);
+            if (e.key === 'Escape') cancelEdit();
+          });
+
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+          actions.appendChild(makeButton('Išsaugoti', 'primary', () => saveEdit(task.id, input.value, error)));
+          actions.appendChild(makeButton('Atšaukti', '', cancelEdit));
+
+          li.appendChild(input);
+          li.appendChild(actions);
+          li.appendChild(error);
+          inputToFocus = input;
+        } else {
+          // Įprastas režimas
+          const title = document.createElement('span');
+          title.className = 'title';
+          title.textContent = (task.done ? '✔ ' : '') + task.title;
+
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+          actions.appendChild(makeButton('Atlikta', 'done-btn', () => markDone(task.id)));
+          actions.appendChild(makeButton('Keisti', '', () => startEdit(task.id)));
+          actions.appendChild(makeButton('Ištrinti', 'danger', () => deleteTask(task.id)));
+
+          li.appendChild(title);
+          li.appendChild(actions);
+        }
+
+        list.appendChild(li);
+      });
+
+      if (inputToFocus) {
+        inputToFocus.focus();
+        inputToFocus.select();
+      }
+    }
+
+    // ---------- Įvykiai ----------
+    document.getElementById('add-btn').addEventListener('click', addTask);
+    newTitle.addEventListener('keydown', e => {
+      if (e.key === 'Enter') addTask();
+    });
+    newTitle.addEventListener('input', () => { message.textContent = ''; });
+
+    render();
+  </script>
+</body>
+</html>
