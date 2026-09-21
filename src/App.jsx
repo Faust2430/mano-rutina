@@ -17,6 +17,9 @@ function App() {
   const [text, setText] = useState('')
   const [time, setTime] = useState('')
 
+  const [editingId, setEditingId] = useState(null)
+  const [editText, setEditText] = useState('')
+
   useEffect(() => {
     localStorage.setItem('mano-rutina', JSON.stringify(items))
   }, [items])
@@ -50,6 +53,15 @@ function App() {
 
   function remove(id) {
     setItems(items.filter((it) => it.id !== id))
+  }
+
+  function saveEdit(id) {
+    if (!editText.trim()) return
+    setItems(
+      items.map((it) => (it.id === id ? { ...it, text: editText.trim() } : it))
+    )
+    setEditingId(null)
+    setEditText('')
   }
 
   function streak(it) {
@@ -93,13 +105,15 @@ function App() {
       <form className="add-form" onSubmit={addItem}>
         <input
           type="text"
-          placeholder="Nauja rutinos užduotis..."
+          placeholder="Jrašyk veiksmo pavadinimą..."
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
         <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         <button type="submit">Pridėti</button>
       </form>
+
+      <div style={{ marginTop: '20px', fontSize: '20px', fontWeight: 'bold' }}>Mano užduotys</div>
 
       <ul className="list">
         {sorted.length === 0 && (
@@ -110,13 +124,46 @@ function App() {
           const s = streak(it)
           return (
             <li key={it.id} className={done ? 'item done' : 'item'}>
-              <input type="checkbox" checked={done} onChange={() => toggle(it.id)} />
-              <div className="item-text">
-                <span className="title">{it.text}</span>
-                {it.time && <span className="time">🕐 {it.time}</span>}
+              <div className="item-text" style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                {editingId === it.id ? (
+                  <div style={{ display: 'flex', gap: '5px', width: '100%' }}>
+                    <input
+                      type="text"
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      autoFocus
+                      style={{ flex: 1, padding: '5px' }}
+                    />
+                    <button onClick={() => saveEdit(it.id)}>Išsaugoti</button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="title" style={{ flex: 1 }}>
+                      {done ? `✓ ${it.text}` : it.text}
+                    </span>
+                    {it.time && <span className="time">🕐 {it.time}</span>}
+                  </>
+                )}
               </div>
+
               {s > 0 && <span className="streak">🔥 {s}</span>}
-              <button className="del" onClick={() => remove(it.id)}>✕</button>
+
+              {/* Veiksmų mygtukai */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => toggle(it.id)}>
+                  {done ? 'Atšaukti' : 'Atlikta'}
+                </button>
+
+                {editingId === it.id ? (
+                  <button onClick={() => setEditingId(null)}>Atšaukti keitimą</button>
+                ) : (
+                  <button onClick={() => { setEditingId(it.id); setEditText(it.text); }}>
+                    Keisti
+                  </button>
+                )}
+
+                <button className="del" onClick={() => remove(it.id)}>Ištrinti</button>
+              </div>
             </li>
           )
         })}
