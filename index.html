@@ -1,13 +1,241 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
     <title>Mano rutina</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    <!-- React ir Babel, jei naudojate vieno failo skriptą -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center py-10">
+    <div id="root" class="w-full max-w-xl px-4"></div>
+
+    <script type="text/babel">
+        function App() {
+            // Čia bus talpinama visa programėlės logika
+            const [tasks, setTasks] = React.useState([]);
+            const [history, setHistory] = React.useState({}); // { "2026-06-01": { taskId: true/false } }
+            const [taskDates, setTaskDates] = React.useState({}); // { taskId: creationDate }
+            const [taskNames, setTaskNames] = React.useState({}); // Istoriniai pavadinimai pagal datas arba bendri
+            
+            // Testavimo režimas
+            const [testMode, setTestMode] = React.useState(false);
+            const [testDateInput, setTestDateInput] = React.useState('');
+            const [currentTestDateTime, setCurrentTestDateTime] = React.useState(null);
+
+            // Peržiūros data (istorija)
+            const [viewDate, setViewDate] = React.useState(''); // jei tuščia - rodoma šiandiena
+
+            // Užsikrovimas iš localStorage
+            React.useEffect(() => {
+                const savedTasks = JSON.parse(localStorage.getItem('routine_tasks') || '[]');
+                const savedHistory = JSON.parse(localStorage.getItem('routine_history') || '{}');
+                const savedTestMode = JSON.parse(localStorage.getItem('routine_test_mode') || 'false');
+                const savedTestDate = localStorage.getItem('routine_test_date') || '';
+
+                setTasks(savedTasks);
+                setHistory(savedHistory);
+                setTestMode(savedTestMode);
+                if (savedTestDate) {
+                    setTestDateInput(savedTestDate);
+                    setCurrentTestDateTime(savedTestDate);
+                }
+            }, []);
+
+            // Duomenų išsaugojimas
+            const saveData = (newTasks, newHistory) => {
+                setTasks(newTasks);
+                setHistory(newHistory);
+                localStorage.setItem('routine_tasks', JSON.stringify(newTasks));
+                localStorage.setItem('routine_history', JSON.stringify(newHistory));
+            };
+
+            // Dabartinės dienos gavimas pagal testavimo režimą
+            const getTodayString = () => {
+                if (testMode && currentTestDateTime) {
+                    return currentTestDateTime.split('T')[0];
+                }
+                const now = new Date();
+                return now.toISOString().split('T')[0];
+            };
+
+            const activeDate = viewDate || getTodayString();
+            const isToday = activeDate === getTodayString();
+
+            return (
+                <div className="flex flex-col gap-6">
+                    <h1 className="text-3xl font-bold text-center">Mano rutina</h1>
+
+                    {/* Testavimo režimo skydelis */}
+                    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold text-sm text-slate-300">Testavimo režimas</span>
+                            <input 
+                                type="checkbox" 
+                                checked={testMode} 
+                                onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setTestMode(val);
+                                    localStorage.setItem('routine_test_mode', JSON.stringify(val));
+                                    if (!val) {
+                                        setCurrentTestDateTime(null);
+                                        localStorage.removeItem('routine_test_date');
+                                    }
+                                }}
+                                className="w-4 h-4 accent-indigo-500"
+                            />
+                        </div>
+                        {testMode && (
+                            <div className="flex gap-2 items-center">
+                                <input 
+                                    type="datetime-local" 
+                                    value={testDateInput}
+                                    onChange={(e) => setTestDateInput(e.target.value)}
+                                    className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded text-sm flex-1"
+                                />
+                                <button 
+                                    onClick={() => {
+                                        setCurrentTestDateTime(testDateInput);
+                                        localStorage.setItem('routine_test_date', testDateInput);
+                                    }}
+                                    className="bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 rounded text-sm font-medium transition"
+                                >
+                                    Taikyti
+                                </button>
+                            </div>
+                        )}
+                        <div className="text-xs text-slate-400">
+                            Dabartinė aktyvi diena programėlėje: <span className="text-indigo-400 font-bold">{activeDate}</span>
+                            {testMode && <span className="ml-2 bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[10px]">Testo režimas įjungtas</span>}
+                        </div>
+                    </div>
+
+                    {/* Istorijos / Datos pasirinkimas */}
+                    <div className="flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-xs text-slate-400">Peržiūros data:</span>
+                            <input 
+                                type="date" 
+                                value={viewDate} 
+                                onChange={(e) => setViewDate(e.target.value)}
+                                className="bg-slate-800 border border-slate-700 px-3 py-1 rounded text-sm"
+                            />
+                        </div>
+                        {!isToday && (
+                            <button 
+                                onClick={() => setViewDate('')}
+                                className="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-indigo-300 border border-slate-700 transition"
+                            >
+                                Grįžti į šiandieną
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Pridėjimo forma (rodoma tik šiandien) */}
+                    {isToday ? (
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                placeholder="Įrašyk užduotį..." 
+                                id="taskInput"
+                                className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
+                            />
+                            <button 
+                                onClick={() => {
+                                    const input = document.getElementById('taskInput');
+                                    const val = input.value.trim();
+                                    if (!val) return;
+                                    const newTask = { id: Date.now().toString(), name: val };
+                                    const updatedTasks = [...tasks, newTask];
+                                    saveData(updatedTasks, history);
+                                    input.value = '';
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-500 px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                            >
+                                Pridėti
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="bg-amber-950/30 border border-amber-900/50 p-3 rounded-lg text-amber-200 text-xs text-center">
+                            Peržiūrimas praeities rodinys (tik skaitymui). Keitimai galimi tik šiandienos rodinyje.
+                        </div>
+                    )}
+
+                    {/* Užduočių sąrašas */}
+                    <div className="flex flex-col gap-3">
+                        <h2 className="text-lg font-semibold text-slate-200">
+                            {isToday ? 'Mano užduotys' : `Užduotys (${activeDate})`}
+                        </h2>
+                        {tasks.length === 0 ? (
+                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center text-slate-500 text-sm">
+                                Sąrašas tuščias. Pridėk pirmą veiksmą.
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                {tasks.map(task => {
+                                    const dayRecord = history[activeDate] || {};
+                                    const isCompleted = !!dayRecord[task.id];
+
+                                    return (
+                                        <div key={task.id} className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-3 rounded-xl">
+                                            <label className="flex items-center gap-3 cursor-pointer flex-1">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={isCompleted}
+                                                    disabled={!isToday}
+                                                    onChange={(e) => {
+                                                        if (!isToday) return;
+                                                        const updatedHistory = { ...history };
+                                                        if (!updatedHistory[activeDate]) {
+                                                            updatedHistory[activeDate] = {};
+                                                        }
+                                                        updatedHistory[activeDate][task.id] = e.target.checked;
+                                                        saveData(tasks, updatedHistory);
+                                                    }}
+                                                    className="w-4 h-4 accent-indigo-500 rounded"
+                                                />
+                                                <span className={`text-sm ${isCompleted ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                                                    {task.name}
+                                                </span>
+                                            </label>
+                                            {isToday && (
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        onClick={() => {
+                                                            const newName = prompt('Pervardinti veiksmą:', task.name);
+                                                            if (newName && newName.trim()) {
+                                                                const updatedTasks = tasks.map(t => t.id === task.id ? {...t, name: newName.trim()} : t);
+                                                                saveData(updatedTasks, history);
+                                                            }
+                                                        }}
+                                                        className="text-xs text-slate-400 hover:text-indigo-400 px-2 py-1"
+                                                    >
+                                                        Redaguoti
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => {
+                                                            const updatedTasks = tasks.filter(t => t.id !== task.id);
+                                                            saveData(updatedTasks, history);
+                                                        }}
+                                                        className="text-xs text-slate-400 hover:text-red-400 px-2 py-1"
+                                                    >
+                                                        Ištrinti
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
 </html>
