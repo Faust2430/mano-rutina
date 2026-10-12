@@ -7,28 +7,43 @@ const INITIAL_TASKS = [
   { id: 3, title: 'Gerti vandenį', target: 5 },
 ];
 
+const getLocalDateTimeString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const mins = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${mins}`;
+};
+
 export default function App() {
   const [isTestMode, setIsTestMode] = useState(() => {
-    const saved = localStorage.getItem('mano_rutina_test_mode');
+    const saved = localStorage.getItem('mano_rutina_test_mode_v4');
     return saved ? JSON.parse(saved) : false;
   });
 
-  const [testDate, setTestDate] = useState(() => {
-    const saved = localStorage.getItem('mano_rutina_test_date');
-    return saved || new Date().toISOString().slice(0, 10);
+  const [testDateTime, setTestDateTime] = useState(() => {
+    const saved = localStorage.getItem('mano_rutina_test_datetime_v4');
+    return saved || getLocalDateTimeString();
+  });
+
+  const [appliedDateTime, setAppliedDateTime] = useState(() => {
+    const saved = localStorage.getItem('mano_rutina_applied_datetime_v4');
+    return saved || getLocalDateTimeString();
   });
 
   const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
 
   const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('mano_rutina_tasks_v3');
+    const saved = localStorage.getItem('mano_rutina_tasks_v4');
     return saved ? JSON.parse(saved) : INITIAL_TASKS;
   });
 
   const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem('mano_rutina_history_v3');
+    const saved = localStorage.getItem('mano_rutina_history_v4');
     if (saved) return JSON.parse(saved);
-    const oldSaved = localStorage.getItem('mano_rutina_history');
+
+    const oldSaved = localStorage.getItem('mano_rutina_history_v3');
     if (!oldSaved) return {};
 
     try {
@@ -38,10 +53,10 @@ export default function App() {
         migrated[dateKey] = {};
         Object.keys(parsed[dateKey]).forEach((taskId) => {
           const val = parsed[dateKey][taskId];
-          const isDone = typeof val === 'boolean' ? val : val?.completed;
           migrated[dateKey][taskId] = {
-            count: isDone ? 1 : 0,
-            target: 1,
+            count: val?.count ?? 0,
+            target: val?.target ?? 1,
+            completions: val?.completions || [],
           };
         });
       });
@@ -51,6 +66,17 @@ export default function App() {
     }
   });
 
+  // Tiesioginė paskutinių paspaudimų laiko žyma kiekvienai užduočiai (užtikrina momentinį 30 min. blokuvimą)
+  const [lastClickTimes, setLastClickTimes] = useState(() => {
+    const saved = localStorage.getItem('mano_rutina_last_clicks_v4');
+    if (saved) return JSON.parse(saved);
+
+    // Bandome išsitraukti vėliausią timestamp iš istorijos
+    const initialClicks = {};
+    // ...bus užpildyta automatiškai arba išsaugojo
+    return initialClicks;
+  });
+
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskTarget, setNewTaskTarget] = useState(1);
 
@@ -58,22 +84,33 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState('');
   const [editingTarget, setEditingTarget] = useState(1);
 
-  const currentDate = isTestMode
-    ? testDate
-    : new Date().toISOString().slice(0, 10);
+  const [cooldownMessages, setCooldownMessages] = useState({});
+
+  const currentActiveDateObj = isTestMode ? new Date(appliedDateTime) : new Date();
+  const currentDateKey = `${currentActiveDateObj.getFullYear()}-${String(currentActiveDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentActiveDateObj.getDate()).padStart(2, '0')}`;
 
   useEffect(() => {
-    localStorage.setItem('mano_rutina_test_mode', JSON.stringify(isTestMode));
-    localStorage.setItem('mano_rutina_test_date', testDate);
-  }, [isTestMode, testDate]);
+    localStorage.setItem('mano_rutina_test_mode_v4', JSON.stringify(isTestMode));
+    localStorage.setItem('mano_rutina_test_datetime_v4', testDateTime);
+    localStorage.setItem('mano_rutina_applied_datetime_v4', appliedDateTime);
+  }, [isTestMode, testDateTime, appliedDateTime]);
 
   useEffect(() => {
-    localStorage.setItem('mano_rutina_tasks_v3', JSON.stringify(tasks));
+    localStorage.setItem('mano_rutina_tasks_v4', JSON.stringify(tasks));
   }, [tasks]);
 
   useEffect(() => {
-    localStorage.setItem('mano_rutina_history_v3', JSON.stringify(history));
+    localStorage.setItem('mano_rutina_history_v4', JSON.stringify(history));
   }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem('mano_rutina_last_clicks_v4', JSON.stringify(lastClickTimes));
+  }, [lastClickTimes]);
+
+  const handleApplyTestTime = (e) => {
+    e.preventDefault();
+    setAppliedDateTime(testDateTime);
+  };
 
   const isValidTarget = (val) => {
     const num = Number(val);
@@ -89,14 +126,52 @@ export default function App() {
   };
 
   const handleIncrement = (taskId) => {
+    const currentTime = isTestMode ? new Date(appliedDateTime).getTime() : new Date().getTime();
+    
+    // Patikriname paskutinio paspaudimo laiką tiesiogiai iš lastClickTimes
+    const lastTs = lastClickTimes[taskId];
+
+    if (lastTs !== undefined && lastTs !== null) {
+      const diffMs = currentTime - lastTs;
+      const diffMins = diffMs / (1000 * 60);
+
+      if (diffMins < 30) {
+        const remainingMins = Math.ceil(30 - diffMins);
+        setCooldownMessages((prev) => ({
+          ...prev,
+          [taskId]: `Per anksti! Liko laukti ${remainingMins} min.`,
+        }));
+        return;
+      }
+    }
+
+    // Jei praėjo >= 30 min arba tai pirmas kartas
+    setCooldownMessages((prev) => {
+      const copy = { ...prev };
+      delete copy[taskId];
+      return copy;
+    });
+
+    // Atnaujiname paskutinio paspaudimo laiką
+    setLastClickTimes((prev) => ({
+      ...prev,
+      [taskId]: currentTime,
+    }));
+
     setHistory((prev) => {
-      const currentDay = prev[currentDate] || {};
-      const { count, target } = getTaskDataForDate(taskId, currentDate);
+      const currentDay = prev[currentDateKey] || {};
+      const taskData = getTaskDataForDate(taskId, currentDateKey);
+      const existingCompletions = currentDay[taskId]?.completions || [];
+
       return {
         ...prev,
-        [currentDate]: {
+        [currentDateKey]: {
           ...currentDay,
-          [taskId]: { count: count + 1, target },
+          [taskId]: {
+            count: taskData.count + 1,
+            target: taskData.target,
+            completions: [...existingCompletions, currentTime],
+          },
         },
       };
     });
@@ -126,7 +201,7 @@ export default function App() {
   const startEditing = (task) => {
     setEditingTaskId(task.id);
     setEditingTitle(task.title);
-    const { target } = getTaskDataForDate(task.id, currentDate);
+    const { target } = getTaskDataForDate(task.id, currentDateKey);
     setEditingTarget(target);
   };
 
@@ -146,13 +221,17 @@ export default function App() {
     );
 
     setHistory((prev) => {
-      const currentDay = prev[currentDate] || {};
-      const { count } = getTaskDataForDate(taskId, currentDate);
+      const currentDay = prev[currentDateKey] || {};
+      const taskData = getTaskDataForDate(taskId, currentDateKey);
       return {
         ...prev,
-        [currentDate]: {
+        [currentDateKey]: {
           ...currentDay,
-          [taskId]: { count, target: targetNum },
+          [taskId]: {
+            count: taskData.count,
+            target: targetNum,
+            completions: currentDay[taskId]?.completions || [],
+          },
         },
       };
     });
@@ -179,17 +258,20 @@ export default function App() {
         </label>
 
         {isTestMode && (
-          <div style={{ marginTop: '10px' }}>
+          <form onSubmit={handleApplyTestTime} style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
-              type="date"
-              value={testDate}
-              onChange={(e) => setTestDate(e.target.value)}
+              type="datetime-local"
+              value={testDateTime}
+              onChange={(e) => setTestDateTime(e.target.value)}
               style={{ padding: '6px', borderRadius: '4px' }}
             />
-          </div>
+            <button type="submit" style={{ padding: '6px 12px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+              Taikyti
+            </button>
+          </form>
         )}
         <p style={{ margin: '8px 0 0 0', fontSize: '0.9rem', color: '#94a3b8' }}>
-          Dabartinė diena: <strong>{currentDate}</strong>
+          Dabartinė aktyvi diena ir laikas programėlėje: <strong>{isTestMode ? appliedDateTime.replace('T', ' ') : getLocalDateTimeString().replace('T', ' ')}</strong>
         </p>
       </div>
 
@@ -246,9 +328,10 @@ export default function App() {
         <h2 style={{ marginTop: 0 }}>Šiandienos užduotys</h2>
         <ul style={{ listStyle: 'none', padding: 0 }}>
           {tasks.map((task) => {
-            const { count, target } = getTaskDataForDate(task.id, currentDate);
+            const { count, target } = getTaskDataForDate(task.id, currentDateKey);
             const isReached = count >= target;
             const isEditing = editingTaskId === task.id;
+            const cooldownMsg = cooldownMessages[task.id];
 
             return (
               <li
@@ -259,8 +342,8 @@ export default function App() {
                   padding: '12px',
                   borderRadius: '6px',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  flexDirection: 'column',
+                  gap: '6px'
                 }}
               >
                 {isEditing ? (
@@ -283,26 +366,33 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <div>
-                      <div style={{ fontWeight: 'bold' }}>{task.title}</div>
-                      <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
-                        Pažanga: <strong>{count}/{target}</strong> {isReached && '✅ Pasiekta!'}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold' }}>{task.title}</div>
+                        <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
+                          Pažanga: <strong>{count}/{target}</strong> {isReached && '✅ Pasiekta!'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => handleIncrement(task.id)}
+                          style={{ background: '#22c55e', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          +1 Atlikta
+                        </button>
+                        <button onClick={() => startEditing(task)} style={{ background: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer' }}>
+                          Redaguoti
+                        </button>
+                        <button onClick={() => deleteTask(task.id)} style={{ background: 'transparent', color: '#f87171', border: 'none', cursor: 'pointer' }}>
+                          Ištrinti
+                        </button>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => handleIncrement(task.id)}
-                        style={{ background: '#22c55e', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                      >
-                        +1 Atlikta
-                      </button>
-                      <button onClick={() => startEditing(task)} style={{ background: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer' }}>
-                        Redaguoti
-                      </button>
-                      <button onClick={() => deleteTask(task.id)} style={{ background: 'transparent', color: '#f87171', border: 'none', cursor: 'pointer' }}>
-                        Ištrinti
-                      </button>
-                    </div>
+                    {cooldownMsg && (
+                      <div style={{ color: '#fca5a5', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                        ⚠️ {cooldownMsg}
+                      </div>
+                    )}
                   </>
                 )}
               </li>
